@@ -1,9 +1,8 @@
-import json
 import logging
 import os
 import sys
 import time
-from logging.handlers import RotatingFileHandler
+from logging import StreamHandler
 
 import requests
 import telegram
@@ -19,7 +18,6 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 RETRY_PERIOD = 600
 ENDPOINT = "https://practicum.yandex.ru/api/user_api/homework_statuses/"
 HEADERS = {"Authorization": f"OAuth {PRACTICUM_TOKEN}"}
-# PAYLOAD = {"from_date": 1549962000}
 
 
 HOMEWORK_VERDICTS = {
@@ -28,22 +26,13 @@ HOMEWORK_VERDICTS = {
     "rejected": "Работа проверена: у ревьюера есть замечания.",
 }
 
-# updater = Updater(TELEGRAM_TOKEN)
-# dispatcher = updater.dispatcher
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-# Указываем обработчик логов
-handler = RotatingFileHandler(
-    "my_logger.log", maxBytes=50000000, backupCount=5
-)
-logger.addHandler(handler)
-# Создаем форматер
-formatter = logging.Formatter(
-    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-# Применяем его к хэндлеру
+handler = StreamHandler(stream=sys.stdout)
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 
 def check_tokens():
@@ -55,28 +44,40 @@ def send_message(bot, message):
     """Отправляет сообщение в Telegram чат."""
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
+        logger.debug("Cообщение в Telegram чат отправлено.")
     except Exception as error:
-        message = f"Сбой в работе программы: {error}"
-        logger.error(message)
+        logger.error(f"Ошибка при отправке сообщения в Telegram чат: {error}")
 
 
+# Убедитесь, что в функции `get_api_answer` обрабатывается ситуация,
+# когда API домашки возвращает код, отличный от 200.
 def get_api_answer(timestamp):
-    """Делает запрос к единственному эндпоинту API-сервиса."""
+    """Делает запрос к эндпоинту API-сервиса."""
     try:
         response = requests.get(
             url=ENDPOINT, headers=HEADERS, params={"from_date": timestamp}
         )
+        if response.status_code != 200:
+            logger.error("API домашки возвращает код, отличный от 200.")
+            raise 
         return response.json()
     except Exception as error:
-        message = f"Сбой в работе программы: {error}"
-        logger.error(message)
+        logger.error(f"Сбой в работе программы: {error}")
 
 
-def check_response(response) -> bool:
+# Убедитесь, что функция `check_response` выбрасывает исключение,
+# если в ответе API домашки нет ключа `homeworks`.
+# Убедитесь, что функция `check_response` выбрасывает исключение `TypeError`,
+# если в ответе API домашки под ключом `homeworks` данные приходят не в виде списка.
+def check_response(response):
     """Проверяет ответ API на соответствие документации."""
     return response.get("homework")
 
 
+# Убедитесь, что функция `parse_status` обрабатывает случай, когда API домашки
+# возвращает недокументированный статус домашней работы либо домашку без статуса.
+# Убедитесь, что функция `parse_status` выбрасывает исключение,
+# когда в ответе API домашки нет ключа `homework_name`.
 def parse_status(homework) -> str:
     """Извлекает из информации о конкретной домашней работе её статус."""
     homework_name = homework.get("homework_name")
@@ -93,11 +94,11 @@ def main() -> None:
     # и отправить сообщение в Telegram.
     # Подождать некоторое время и вернуться в пункт 1.
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    timestamp = int(time.time()) - RETRY_PERIOD
+    timestamp = int(time.time())  # - RETRY_PERIOD
     last_error = ""
-    logger.debug("Проверка наличия токенов.")
+    logger.debug("Проверка доступности переменных окружения.")
     if not check_tokens():
-        logger.critical("Отсутствуют токены!")
+        logger.critical("Отсутствуют переменные окружения!")
         sys.exit()
     while True:
         try:
@@ -111,7 +112,7 @@ def main() -> None:
                 send_message(bot, f"{lesson_name} - {hw_status}")
             else:
                 send_message(bot, "Нет нового статуса")
-                logger.info("Нет нового статуса")
+                logger.debug("Нет нового статуса")
         except Exception as error:
             message = f"Сбой в работе программы: {error}"
             logger.error(error)
