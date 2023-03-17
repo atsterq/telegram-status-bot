@@ -8,6 +8,7 @@ from logging import StreamHandler
 import requests
 import telegram
 from dotenv import load_dotenv
+from requests import RequestException
 
 load_dotenv()
 
@@ -36,12 +37,12 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 
-def check_tokens():
+def check_tokens() -> None:
     """Проверяет доступность переменных окружения."""
     return all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID])
 
 
-def send_message(bot, message: str):
+def send_message(bot, message: str) -> None:
     """Отправляет сообщение в Telegram чат."""
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
@@ -50,8 +51,6 @@ def send_message(bot, message: str):
         logger.error(f"Ошибка при отправке сообщения в Telegram чат: {error}")
 
 
-# Убедитесь, что в функции `get_api_answer` обрабатывается ситуация,
-# когда API домашки возвращает код, отличный от 200. x2
 def get_api_answer(timestamp: int) -> dict:
     """Делает запрос к эндпоинту API-сервиса."""
     try:
@@ -59,52 +58,55 @@ def get_api_answer(timestamp: int) -> dict:
             url=ENDPOINT, headers=HEADERS, params={"from_date": timestamp}
         )
         if response.status_code != HTTPStatus.OK:
-            error_message = "API домашки возвращает код, отличный от 200."
-            logger.error(error_message)
-            raise Exception(error_message)
-        else:
-            return response.json()
-    except Exception as error:
+            error = "API домашки возвращает код, отличный от 200."
+            logger.error(error)
+            raise Exception(error)
+        return response.json()
+    except RequestException as error:
         logger.error(f"Ошибка при запросе к эндпойнту: {error}")
+        raise SystemError(error)
 
 
-# Убедитесь, что функция `check_response` выбрасывает исключение `TypeError`
-# в случае, если в ответе API структура данных не соответствует ожиданиям:
-# например, получен список вместо ожидаемого словаря.
 def check_response(response: dict) -> list:
     """Проверяет ответ API на соответствие документации."""
-    if "homeworks" not in response:
-        error_message = "в ответе API домашки нет ключа homeworks"
-        logger.error(error_message)
-        raise ValueError(error_message)
-    homeworks = response.get("homeworks")
-    if not isinstance(homeworks, list):
-        error_message = (
-            f"Под ключеи homeworks был получен объект типа {type(response)},"
-            "ожидался объект типа list"
-        )
-        logger.error(error_message)
-        raise TypeError(error_message)
     if not isinstance(response, dict):
-        error_message = (
+        error = (
             f"В ответе был получен объект типа {type(response)},"
             "ожидался объект типа dict"
         )
-        logger.error(error_message)
-        raise TypeError(error_message)
+        logger.error(error)
+        raise TypeError(error)
+    if "homeworks" not in response:
+        error = "в ответе API домашки нет ключа homeworks"
+        logger.error(error)
+        raise ValueError(error)
+    homeworks = response.get("homeworks")
+    if not isinstance(homeworks, list):
+        error = (
+            f"Под ключеи homeworks был получен объект типа {type(response)},"
+            "ожидался объект типа list"
+        )
+        logger.error(error)
+        raise TypeError(error)
     return response.get("homeworks")
 
 
-# Убедитесь, что функция `parse_status` обрабатывает случай, когда API домашки
-# возвращает недокументированный статус домашней работы либо домашку без статуса.
-# Убедитесь, что функция `parse_status` выбрасывает исключение,
-# когда в ответе API домашки нет ключа `homework_name`.
 def parse_status(homework: dict) -> str:
     """Извлекает из информации о конкретной домашней работе её статус."""
     homework_name = homework.get("homework_name")
-    homework_status = homework.get("status")
-    verdict = HOMEWORK_VERDICTS[homework_status]
-    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    status = homework.get("status")
+    try:
+        if status not in HOMEWORK_VERDICTS.keys() or None:
+            raise KeyError(
+                "Отсутствующий или недокументированный статус домашки"
+            )
+        if "homework_name" not in homework or None:
+            raise KeyError(f"В ответе API домашки нет ключа {homework_name}")
+        verdict = HOMEWORK_VERDICTS[status]
+        return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    except Exception as error:
+        logger.error("Ошибка проверки ключей.")
+        raise KeyError(error)
 
 
 def main() -> None:
@@ -121,7 +123,6 @@ def main() -> None:
         try:
             response = get_api_answer(timestamp)
             homeworks = check_response(response)
-            # timestamp = response.get("current_date")
             if homeworks:
                 homework = homeworks[0]
                 message = parse_status(homework)
