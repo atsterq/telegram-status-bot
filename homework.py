@@ -21,7 +21,6 @@ RETRY_PERIOD = 600
 ENDPOINT = "https://practicum.yandex.ru/api/user_api/homework_statuses/"
 HEADERS = {"Authorization": f"OAuth {PRACTICUM_TOKEN}"}
 
-
 HOMEWORK_VERDICTS = {
     "approved": "Работа проверена: ревьюеру всё понравилось. Ура!",
     "reviewing": "Работа взята на проверку ревьюером.",
@@ -49,21 +48,26 @@ def send_message(bot, message: str) -> None:
         logger.debug("Cообщение в Telegram чат отправлено.")
     except Exception as error:
         logger.error(f"Ошибка при отправке сообщения в Telegram чат: {error}")
+        raise ValueError(error)
 
 
 def get_api_answer(timestamp: int) -> dict:
     """Делает запрос к эндпоинту API-сервиса."""
+    ENDPOINT_DICT = {
+        "url": ENDPOINT,
+        "headers": HEADERS,
+        "params": {"from_date": timestamp},
+    }
     try:
-        response = requests.get(
-            url=ENDPOINT, headers=HEADERS, params={"from_date": timestamp}
-        )
+        response = requests.get(**ENDPOINT_DICT)
         if response.status_code != HTTPStatus.OK:
-            error = "API домашки возвращает код, отличный от 200."
-            logger.error(error)
+            error = (
+                "При проверке статуса сервера, API домашки возвращает"
+                f"код {response.status_code}, отличный от {HTTPStatus.OK}."
+            )
             raise Exception(error)
         return response.json()
     except RequestException as error:
-        logger.error(f"Ошибка при запросе к эндпойнту: {error}")
         raise SystemError(error)
 
 
@@ -74,11 +78,9 @@ def check_response(response: dict) -> list:
             f"В ответе был получен объект типа {type(response)},"
             "ожидался объект типа dict"
         )
-        logger.error(error)
         raise TypeError(error)
     if "homeworks" not in response:
         error = "в ответе API домашки нет ключа homeworks"
-        logger.error(error)
         raise ValueError(error)
     homeworks = response.get("homeworks")
     if not isinstance(homeworks, list):
@@ -86,7 +88,6 @@ def check_response(response: dict) -> list:
             f"Под ключеи homeworks был получен объект типа {type(response)},"
             "ожидался объект типа list"
         )
-        logger.error(error)
         raise TypeError(error)
     return response.get("homeworks")
 
@@ -95,30 +96,25 @@ def parse_status(homework: dict) -> str:
     """Извлекает из информации о конкретной домашней работе её статус."""
     homework_name = homework.get("homework_name")
     status = homework.get("status")
-    try:
-        if status not in HOMEWORK_VERDICTS.keys() or None:
-            raise KeyError(
-                "Отсутствующий или недокументированный статус домашки"
-            )
-        if "homework_name" not in homework or None:
-            raise KeyError(f"В ответе API домашки нет ключа {homework_name}")
-        verdict = HOMEWORK_VERDICTS[status]
-        return f'Изменился статус проверки работы "{homework_name}". {verdict}'
-    except Exception as error:
-        logger.error("Ошибка проверки ключей.")
-        raise KeyError(error)
+    if status not in HOMEWORK_VERDICTS.keys() or None:
+        raise KeyError("Отсутствующий или недокументированный статус домашки")
+    if "homework_name" not in homework or None:
+        raise KeyError(f"В ответе API домашки нет ключа {homework_name}")
+    verdict = HOMEWORK_VERDICTS[status]
+    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def main() -> None:
     """Основная логика работы бота."""
-    bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    timestamp = int(time.time())
-    sent_message = ""
-
     logger.debug("Проверка доступности переменных окружения.")
     if not check_tokens():
         logger.critical("Отсутствуют переменные окружения!")
         sys.exit()
+
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    timestamp = int(time.time())
+    sent_message = ""
+
     while True:
         try:
             response = get_api_answer(timestamp)
@@ -138,6 +134,7 @@ def main() -> None:
                 send_message(bot, message)
         finally:
             time.sleep(RETRY_PERIOD)
+            timestamp = int(time.time())
 
 
 if __name__ == "__main__":
