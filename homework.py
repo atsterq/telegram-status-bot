@@ -63,7 +63,7 @@ def get_api_answer(timestamp: int) -> dict:
             error = (
                 "При проверке статуса сервера, API домашки возвращает"
                 f"код {response.status_code}, отличный от {HTTPStatus.OK}."
-                f"Параметры запроса: {ENDPOINT_DICT['params']}"
+                f"Параметры запроса: {ENDPOINT_DICT}"
                 f"Ответ API: {response.content}"
             )
             raise Exception(error)
