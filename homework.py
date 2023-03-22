@@ -135,7 +135,6 @@ def main() -> None:
                 send_message(bot, message)
         finally:
             time.sleep(RETRY_PERIOD)
-            timestamp = homework.get("current_date")
 
 
 if __name__ == "__main__":
