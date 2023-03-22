@@ -46,9 +46,8 @@ def send_message(bot, message: str) -> None:
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
         logger.debug("Cообщение в Telegram чат отправлено.")
-    except Exception as error:
-        logger.error(f"Ошибка при отправке сообщения в Telegram чат: {error}")
-        raise ValueError(error)
+    except telegram.TelegramError as error:
+        logger.error(error)
 
 
 def get_api_answer(timestamp: int) -> dict:
@@ -76,11 +75,10 @@ def get_api_answer(timestamp: int) -> dict:
 def check_response(response: dict) -> list:
     """Проверяет ответ API на соответствие документации."""
     if not isinstance(response, dict):
-        error = (
+        raise TypeError(
             f"В ответе был получен объект типа {type(response)},"
             "ожидался объект типа dict"
         )
-        raise TypeError(error)
     if "homeworks" not in response:
         error = "в ответе API домашки нет ключа homeworks"
         raise ValueError(error)
@@ -137,6 +135,7 @@ def main() -> None:
                 send_message(bot, message)
         finally:
             time.sleep(RETRY_PERIOD)
+            timestamp = homework.get("current_date")
 
 
 if __name__ == "__main__":
