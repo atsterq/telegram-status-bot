@@ -60,15 +60,17 @@ def get_api_answer(timestamp: int) -> dict:
     }
     try:
         response = requests.get(**ENDPOINT_DICT)
-        if response.status_code != HTTPStatus.OK:
-            error = (
-                "При проверке статуса сервера, API домашки возвращает"
-                f"код {response.status_code}, отличный от {HTTPStatus.OK}."
-            )
-            raise Exception(error)
-        return response.json()
     except RequestException as error:
         raise SystemError(error)
+    if response.status_code != HTTPStatus.OK:
+        error = (
+            "При проверке статуса сервера, API домашки возвращает"
+            f"код {response.status_code}, отличный от {HTTPStatus.OK}."
+            f"Параметры запроса: {ENDPOINT_DICT}"
+            f"Ответ API: {response.content}"
+        )
+        raise Exception(error)
+    return response.json()
 
 
 def check_response(response: dict) -> list:
@@ -119,6 +121,7 @@ def main() -> None:
         try:
             response = get_api_answer(timestamp)
             homeworks = check_response(response)
+            timestamp = homeworks[0].get("current_date")
             if homeworks:
                 homework = homeworks[0]
                 message = parse_status(homework)
@@ -134,7 +137,6 @@ def main() -> None:
                 send_message(bot, message)
         finally:
             time.sleep(RETRY_PERIOD)
-            timestamp = int(time.time())
 
 
 if __name__ == "__main__":
